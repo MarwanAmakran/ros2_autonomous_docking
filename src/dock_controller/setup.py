@@ -25,6 +25,7 @@ setup(
     entry_points={
     'console_scripts': [
         'dock_controller = dock_controller.controller:main',
+        'undock_robot = dock_controller.undock_command:main',
     ],
 },
 )

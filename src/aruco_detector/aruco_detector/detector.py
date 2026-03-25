@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Point
 from cv_bridge import CvBridge
@@ -15,11 +16,18 @@ class ArucoDetector(Node):
 
         self.bridge = CvBridge()
 
+        # -1 means: accept any marker ID
+        self.declare_parameter('target_marker_id', -1)
+        self.target_marker_id = int(self.get_parameter('target_marker_id').value)
+
+        # Camera publishers are often BEST_EFFORT
+        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+
         self.subscription = self.create_subscription(
             Image,
             '/camera/image_raw',
             self.image_callback,
-            10)
+            qos)
 
         self.publisher = self.create_publisher(
             Point,
@@ -40,17 +48,32 @@ class ArucoDetector(Node):
         )
 
         if ids is not None:
-            center = np.mean(corners[0][0], axis=0)
+            marker_index = 0
+            marker_id = int(ids[0][0])
+
+            if self.target_marker_id >= 0:
+                matches = np.where(ids.flatten() == self.target_marker_id)[0]
+                if len(matches) == 0:
+                    return
+                marker_index = int(matches[0])
+                marker_id = self.target_marker_id
+            else:
+                marker_id = int(ids[marker_index][0])
+
+            marker_corners = corners[marker_index][0].astype(np.float32)
+            center = np.mean(marker_corners, axis=0)
+            area = float(cv2.contourArea(marker_corners))
 
             point = Point()
             point.x = float(center[0])
-            point.y = float(center[1])
-            point.z = 0.0
+            # Use y to carry marker area (px^2) for docking distance heuristic
+            point.y = area
+            point.z = float(marker_id)
 
             self.publisher.publish(point)
 
             self.get_logger().info(
-                f"Marker detected at x={point.x:.1f}, y={point.y:.1f}"
+                f"ArUco ID={marker_id} x={point.x:.1f}, area={area:.1f}"
             )
 
 
