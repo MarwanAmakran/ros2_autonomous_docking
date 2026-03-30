@@ -51,12 +51,12 @@ class DockController(Node):
 
         self.declare_parameter('target_marker_id', -1)
         self.declare_parameter('search_angular_speed', 0.12)
-        self.declare_parameter('approach_linear_speed', 0.06)
+        self.declare_parameter('approach_linear_speed', 0.08)
         self.declare_parameter('marker_timeout_sec', 0.6)
         self.declare_parameter('dock_area_threshold', 18000.0)
         self.declare_parameter('approach_timeout_sec', 20.0)
-        self.declare_parameter('undock_linear_speed', -0.07)
-        self.declare_parameter('undock_duration_sec', 2.0)
+        self.declare_parameter('undock_linear_speed', -0.08)
+        self.declare_parameter('undock_duration_sec', 2.5)
         self.declare_parameter('charging_voltage_rise_per_sec', 0.01)
 
         self.target_marker_id = int(self.get_parameter('target_marker_id').value)

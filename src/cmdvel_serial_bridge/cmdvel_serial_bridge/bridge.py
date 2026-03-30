@@ -42,8 +42,9 @@ class CmdVelSerialBridge(Node):
         self.last_sent_left = None
         self.last_sent_right = None
         self.last_send_time = self.get_clock().now()
+        self.send_counter = 0
 
-        # Send continuously so the motor controller receives fresh commands
+        # Send commands with reduced rate to prevent queue buildup
         self.timer = self.create_timer(self.send_period_sec, self.send_command)
 
     def cmd_callback(self, msg):
@@ -64,6 +65,7 @@ class CmdVelSerialBridge(Node):
             self.left = 0
             self.right = 0
 
+        # Only send if command changed OR heartbeat due
         send_due_to_change = (
             self.left != self.last_sent_left or
             self.right != self.last_sent_right
@@ -72,14 +74,23 @@ class CmdVelSerialBridge(Node):
             (now - self.last_send_time).nanoseconds / 1e9 >= self.heartbeat_sec
         )
 
-        if not send_due_to_change and not send_due_to_heartbeat:
+        if not (send_due_to_change or send_due_to_heartbeat):
             return
 
         command = f"D {self.left} {self.right} 1\n"
-        self.ser.write(command.encode())
+        try:
+            self.ser.write(command.encode())
+        except Exception as e:
+            self.get_logger().warn(f"Serial write failed: {e}")
+
         self.last_sent_left = self.left
         self.last_sent_right = self.right
         self.last_send_time = now
+        
+        # Log only every Nth send to reduce spam
+        self.send_counter += 1
+        if self.send_counter % 5 == 0:
+            self.get_logger().info(f"Sent: {command.strip()}")
 
     def destroy_node(self):
         try:
