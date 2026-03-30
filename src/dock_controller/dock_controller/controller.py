@@ -44,7 +44,6 @@ class DockController(Node):
         self.marker_id = None
         self.last_marker_time = None
         self.state_enter_time = self.get_clock().now()
-
         self.last_battery_voltage = None
         self.last_battery_time = None
         self.charging_state = "UNKNOWN"
@@ -53,24 +52,29 @@ class DockController(Node):
         self.declare_parameter('search_angular_speed', 0.12)
         self.declare_parameter('approach_linear_speed', 0.08)
         self.declare_parameter('marker_timeout_sec', 0.6)
+        self.declare_parameter('align_hysteresis_sec', 2.0)
         self.declare_parameter('dock_area_threshold', 18000.0)
         self.declare_parameter('approach_timeout_sec', 20.0)
         self.declare_parameter('undock_linear_speed', -0.08)
         self.declare_parameter('undock_duration_sec', 2.5)
         self.declare_parameter('charging_voltage_rise_per_sec', 0.01)
+        self.declare_parameter('log_interval_sec', 2.0)
 
         self.target_marker_id = int(self.get_parameter('target_marker_id').value)
         self.search_angular_speed = float(self.get_parameter('search_angular_speed').value)
         self.approach_linear_speed = float(self.get_parameter('approach_linear_speed').value)
         self.marker_timeout_sec = float(self.get_parameter('marker_timeout_sec').value)
+        self.align_hysteresis_sec = float(self.get_parameter('align_hysteresis_sec').value)
         self.dock_area_threshold = float(self.get_parameter('dock_area_threshold').value)
         self.approach_timeout_sec = float(self.get_parameter('approach_timeout_sec').value)
         self.undock_linear_speed = float(self.get_parameter('undock_linear_speed').value)
         self.undock_duration_sec = float(self.get_parameter('undock_duration_sec').value)
         self.charging_voltage_rise_per_sec = float(self.get_parameter('charging_voltage_rise_per_sec').value)
+        self.log_interval_sec = float(self.get_parameter('log_interval_sec').value)
 
         # Basic state machine
         self.state = "SEARCH"
+        self.last_log_time = self.get_clock().now()
         self.publish_dock_status()
 
         self.timer = self.create_timer(0.1, self.control_loop)
@@ -134,7 +138,15 @@ class DockController(Node):
             self.state = new_state
             self.state_enter_time = self.get_clock().now()
             self.publish_dock_status()
+            self.last_log_time = self.get_clock().now()
             self.get_logger().info(f"STATE CHANGE → {new_state}")
+
+    def should_log(self):
+        dt = (self.get_clock().now() - self.last_log_time).nanoseconds / 1e9
+        if dt >= self.log_interval_sec:
+            self.last_log_time = self.get_clock().now()
+            return True
+        return False
 
     def state_age(self):
         return (self.get_clock().now() - self.state_enter_time).nanoseconds / 1e9
@@ -183,9 +195,20 @@ class DockController(Node):
         # -------- ALIGN --------
         if self.state == "ALIGN":
             if not self.marker_recent() or self.image_width is None or self.marker_x is None:
-                self.set_state("SEARCH")
-                self.get_logger().warn("Marker lost → back to SEARCH")
-                return
+                # Check if marker loss is recent; if so, stay in ALIGN briefly
+                if self.state_age() < self.align_hysteresis_sec:
+                    # Keep rotating slowly to find marker
+                    twist.angular.z = self.search_angular_speed * 0.5
+                    self.cmd_pub.publish(twist)
+                    if self.should_log():
+                        self.get_logger().info("ALIGN: marker lost, searching...")
+                    return
+                else:
+                    # Stay in ALIGN for hysteresis period, then give up
+                    self.set_state("SEARCH")
+                    if self.should_log():
+                        self.get_logger().warn("ALIGN timeout → SEARCH")
+                    return
 
             center_x = 0.5 * float(self.image_width)
             error = (self.marker_x - center_x) / max(center_x, 1.0)
@@ -197,13 +220,16 @@ class DockController(Node):
 
             if math.fabs(error) < 0.08:
                 self.set_state("APPROACH")
+            elif self.should_log():
+                self.get_logger().info(f"ALIGN: error={error:.3f}")
             return
 
         # -------- APPROACH --------
         if self.state == "APPROACH":
             if not self.marker_recent() or self.image_width is None or self.marker_x is None:
                 self.set_state("SEARCH")
-                self.get_logger().warn("Marker lost while approaching → SEARCH")
+                if self.should_log():
+                    self.get_logger().warn("Marker lost during APPROACH → SEARCH")
                 return
 
             if self.state_age() > self.approach_timeout_sec:
@@ -223,6 +249,8 @@ class DockController(Node):
             if math.fabs(error) < 0.05 and self.marker_area >= self.dock_area_threshold:
                 self.stop_robot()
                 self.set_state("DOCKED")
+            elif self.should_log():
+                self.get_logger().info(f"APPROACH: error={error:.3f}, area={self.marker_area:.0f}")
             return
 
         # -------- DOCKED --------
