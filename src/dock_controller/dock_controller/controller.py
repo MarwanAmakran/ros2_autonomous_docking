@@ -58,7 +58,7 @@ class DockController(Node):
         self.declare_parameter('undock_linear_speed', -0.08)
         self.declare_parameter('undock_duration_sec', 2.5)
         self.declare_parameter('charging_voltage_rise_per_sec', 0.01)
-        self.declare_parameter('log_interval_sec', 2.0)
+        self.declare_parameter('log_interval_sec', 30.0)
 
         self.target_marker_id = int(self.get_parameter('target_marker_id').value)
         self.search_angular_speed = float(self.get_parameter('search_angular_speed').value)

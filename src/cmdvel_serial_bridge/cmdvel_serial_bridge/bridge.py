@@ -14,6 +14,7 @@ class CmdVelSerialBridge(Node):
         self.declare_parameter('cmd_timeout_sec', 0.5)
         self.declare_parameter('send_period_sec', 0.2)
         self.declare_parameter('heartbeat_sec', 0.6)
+        self.declare_parameter('min_command_hold_sec', 30.0)
         self.declare_parameter('max_pwm', 80)
         self.declare_parameter('linear_gain', 50.0)
         self.declare_parameter('angular_gain', 50.0)
@@ -23,6 +24,7 @@ class CmdVelSerialBridge(Node):
         self.cmd_timeout_sec = float(self.get_parameter('cmd_timeout_sec').value)
         self.send_period_sec = float(self.get_parameter('send_period_sec').value)
         self.heartbeat_sec = float(self.get_parameter('heartbeat_sec').value)
+        self.min_command_hold_sec = float(self.get_parameter('min_command_hold_sec').value)
         self.max_pwm = int(self.get_parameter('max_pwm').value)
         self.linear_gain = float(self.get_parameter('linear_gain').value)
         self.angular_gain = float(self.get_parameter('angular_gain').value)
@@ -39,24 +41,38 @@ class CmdVelSerialBridge(Node):
         self.left = 0
         self.right = 0
         self.last_cmd_time = self.get_clock().now()
+        self.current_cmd_start_time = self.get_clock().now()
         self.last_sent_left = None
         self.last_sent_right = None
         self.last_send_time = self.get_clock().now()
-        self.send_counter = 0
 
         # Send commands with reduced rate to prevent queue buildup
         self.timer = self.create_timer(self.send_period_sec, self.send_command)
 
     def cmd_callback(self, msg):
+        now = self.get_clock().now()
         linear = float(msg.linear.x)
         angular = float(msg.angular.z)
 
         left = int(self.linear_gain * linear - self.angular_gain * angular)
         right = int(self.linear_gain * linear + self.angular_gain * angular)
 
-        self.left = max(min(left, self.max_pwm), -self.max_pwm)
-        self.right = max(min(right, self.max_pwm), -self.max_pwm)
-        self.last_cmd_time = self.get_clock().now()
+        candidate_left = max(min(left, self.max_pwm), -self.max_pwm)
+        candidate_right = max(min(right, self.max_pwm), -self.max_pwm)
+
+        elapsed = (now - self.current_cmd_start_time).nanoseconds / 1e9
+
+        # Keep current command long enough for the robot to execute physically
+        if elapsed < self.min_command_hold_sec:
+            self.last_cmd_time = now
+            return
+
+        # Accept new command only after hold period
+        self.left = candidate_left
+        self.right = candidate_right
+        self.current_cmd_start_time = now
+        self.last_cmd_time = now
+        self.get_logger().info(f"Accepted cmd (hold {self.min_command_hold_sec:.0f}s): D {self.left} {self.right} 1")
 
     def send_command(self):
         now = self.get_clock().now()
@@ -86,11 +102,6 @@ class CmdVelSerialBridge(Node):
         self.last_sent_left = self.left
         self.last_sent_right = self.right
         self.last_send_time = now
-        
-        # Log only every Nth send to reduce spam
-        self.send_counter += 1
-        if self.send_counter % 5 == 0:
-            self.get_logger().info(f"Sent: {command.strip()}")
 
     def destroy_node(self):
         try:
