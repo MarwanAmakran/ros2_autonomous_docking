@@ -17,7 +17,7 @@ class CmdVelSerialBridge(Node):
         self.declare_parameter('max_pwm', 80)
         self.declare_parameter('linear_gain', 50.0)
         self.declare_parameter('angular_gain', 35.0)
-        self.declare_parameter('min_pwm_move', 14)
+        self.declare_parameter('min_pwm_move', 10)
 
         port = str(self.get_parameter('port').value)
         baud = int(self.get_parameter('baud').value)
@@ -46,9 +46,11 @@ class CmdVelSerialBridge(Node):
         self.last_sent_left = None
         self.last_sent_right = None
         self.last_send_time = self.get_clock().now()
+        self.last_status_time = self.get_clock().now()
 
         # Send commands with reduced rate to prevent queue buildup
         self.timer = self.create_timer(self.send_period_sec, self.send_command)
+        self.status_timer = self.create_timer(1.0, self.print_status)
 
     def _apply_deadband(self, pwm):
         if pwm == 0:
@@ -117,6 +119,13 @@ class CmdVelSerialBridge(Node):
         self.last_sent_left = desired_left
         self.last_sent_right = desired_right
         self.last_send_time = now
+
+    def print_status(self):
+        # Low-rate status so runtime is visible even when commands do not change.
+        print(
+            f"[BRIDGE STATUS] rx=({self.left},{self.right}) sent=({self.last_sent_left},{self.last_sent_right})",
+            flush=True,
+        )
 
     def destroy_node(self):
         try:

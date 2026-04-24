@@ -69,6 +69,7 @@ class DockController(Node):
         self.declare_parameter('charging_voltage_rise_per_sec', 0.01)
         self.declare_parameter('low_battery_alarm_v', 6.0)
         self.declare_parameter('fallback_image_width', 640.0)
+        self.declare_parameter('auto_dock_enabled', True)
 
         self.target_marker_id = int(self.get_parameter('target_marker_id').value)
         self.search_angular_speed = float(self.get_parameter('search_angular_speed').value)
@@ -86,6 +87,7 @@ class DockController(Node):
         self.charging_voltage_rise_per_sec = float(self.get_parameter('charging_voltage_rise_per_sec').value)
         self.low_battery_alarm_v = float(self.get_parameter('low_battery_alarm_v').value)
         self.fallback_image_width = float(self.get_parameter('fallback_image_width').value)
+        self.auto_dock_enabled = bool(self.get_parameter('auto_dock_enabled').value)
 
         # Timers
         self.control_timer = self.create_timer(0.1, self.control_loop)
@@ -275,6 +277,9 @@ class DockController(Node):
 
         if self.state == 'IDLE':
             self.publish_cmd(Twist())
+            if self.auto_dock_enabled and self.marker_recent():
+                self.set_state('ALIGN')
+                return
             if self.dock_requested:
                 self.set_state('SEARCH')
             return
