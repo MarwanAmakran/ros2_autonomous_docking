@@ -13,7 +13,7 @@ class CmdVelSerialBridge(Node):
         self.declare_parameter('port', '/dev/ttyACM0')
         self.declare_parameter('baud', 57600)
         self.declare_parameter('cmd_timeout_sec', 1.0)
-        self.declare_parameter('send_period_sec', 0.05)
+        self.declare_parameter('send_period_sec', 5.0)
         self.declare_parameter('heartbeat_sec', 0.6)
         self.declare_parameter('max_pwm', 80)
         self.declare_parameter('linear_gain', 50.0)

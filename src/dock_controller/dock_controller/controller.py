@@ -97,6 +97,7 @@ class DockController(Node):
         self.marker_area = float(msg.y)
         self.marker_id = marker_id
         self.last_marker_time = self.get_clock().now()
+        print(f"[DOCK MARKER] ID={marker_id}, x={self.marker_x:.1f}, area={self.marker_area:.1f}, recent={self.marker_recent()}", flush=True)
 
     def battery_callback(self, msg):
         now = self.get_clock().now()
@@ -267,7 +268,11 @@ class DockController(Node):
                 self.set_state('IDLE')
                 self.cmd_pub.publish(Twist())
                 return
-            if self.marker_recent() and self.image_width is not None:
+            recent = self.marker_recent()
+            has_width = self.image_width is not None
+            print(f"[DOCK SEARCH] marker_recent={recent}, image_width={has_width}", flush=True)
+            if recent and has_width:
+                print(f"[DOCK SEARCH] -> Going to ALIGN!", flush=True)
                 self.set_state('ALIGN')
                 return
             cmd.angular.z = self.search_angular_speed
