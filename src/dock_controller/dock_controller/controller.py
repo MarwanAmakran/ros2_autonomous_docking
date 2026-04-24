@@ -129,9 +129,12 @@ class DockController(Node):
         self.last_battery_time = now
 
     def dock_trigger_callback(self, msg):
+        self.get_logger().info(f"RECEIVED /dock_robot trigger: x={msg.x}")
         if msg.x > 0.5:
             self.dock_requested = True
+            self.get_logger().info(f"dock_requested=True, state={self.state}")
             if self.state == 'IDLE' and not self.emergency_stop:
+                self.get_logger().info("Setting state to SEARCH")
                 self.set_state('SEARCH')
 
     def undock_callback(self, msg):
