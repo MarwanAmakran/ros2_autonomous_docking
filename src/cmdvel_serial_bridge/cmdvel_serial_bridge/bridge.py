@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 import serial
+import sys
 
 
 class CmdVelSerialBridge(Node):
@@ -30,7 +31,7 @@ class CmdVelSerialBridge(Node):
         self.min_pwm_move = int(self.get_parameter('min_pwm_move').value)
 
         self.ser = serial.Serial(port, baud, timeout=1)
-        self.get_logger().info(f"Connected to {port} @ {baud}")
+        print(f"[BRIDGE] Connected to {port} @ {baud}", flush=True)
 
         self.subscription = self.create_subscription(
             Twist,
@@ -72,7 +73,7 @@ class CmdVelSerialBridge(Node):
         self.left = self._apply_deadband(candidate_left)
         self.right = self._apply_deadband(candidate_right)
         self.last_cmd_time = now
-        self.get_logger().info(f"[cmd_callback] linear={linear:.3f}, angular={angular:.3f} -> L={self.left}, R={self.right}")
+        print(f"[BRIDGE CMD] L={self.left:3d}, R={self.right:3d}", flush=True)
 
     def send_command(self):
         now = self.get_clock().now()
@@ -97,11 +98,11 @@ class CmdVelSerialBridge(Node):
             return
 
         command = f"D {desired_left} {desired_right} 1\n"
-        self.get_logger().info(f"Sent: {command.strip()}")
+        print(f"[BRIDGE SEND] {command.strip()}", flush=True)
         try:
             self.ser.write(command.encode())
         except Exception as e:
-            self.get_logger().warn(f"Serial write failed: {e}")
+            print(f"[BRIDGE ERROR] Serial write failed: {e}", flush=True)
 
         self.last_sent_left = desired_left
         self.last_sent_right = desired_right
