@@ -51,7 +51,7 @@ class DockController(Node):
 
         # Parameters
         self.declare_parameter('target_marker_id', -1)
-        self.declare_parameter('search_angular_speed', 0.12)
+        self.declare_parameter('search_angular_speed', 0.35)
         self.declare_parameter('approach_linear_speed', 0.08)
         self.declare_parameter('marker_timeout_sec', 0.8)
         self.declare_parameter('search_timeout_sec', 25.0)
