@@ -3,6 +3,7 @@ import math
 import rclpy
 from geometry_msgs.msg import Point, Twist
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, Image
 
 
@@ -19,7 +20,7 @@ class DockController(Node):
 
         # Subscriptions
         self.create_subscription(Point, '/dock_position', self.marker_callback, 10)
-        self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
+        self.create_subscription(Image, '/camera/image_raw', self.image_callback, qos_profile_sensor_data)
         self.create_subscription(BatteryState, '/battery_state', self.battery_callback, 10)
         self.create_subscription(Point, '/dock_robot', self.dock_trigger_callback, 10)
         self.create_subscription(Point, '/undock_robot', self.undock_callback, 10)
