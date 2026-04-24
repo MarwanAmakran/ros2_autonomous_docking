@@ -72,6 +72,7 @@ class CmdVelSerialBridge(Node):
         self.left = self._apply_deadband(candidate_left)
         self.right = self._apply_deadband(candidate_right)
         self.last_cmd_time = now
+        self.get_logger().info(f"[cmd_callback] linear={linear:.3f}, angular={angular:.3f} -> L={self.left}, R={self.right}")
 
     def send_command(self):
         now = self.get_clock().now()
