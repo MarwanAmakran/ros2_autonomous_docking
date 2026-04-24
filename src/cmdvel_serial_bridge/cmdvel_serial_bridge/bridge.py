@@ -2,7 +2,6 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 import serial
-import sys
 
 
 class CmdVelSerialBridge(Node):
@@ -13,8 +12,8 @@ class CmdVelSerialBridge(Node):
         self.declare_parameter('port', '/dev/ttyACM0')
         self.declare_parameter('baud', 57600)
         self.declare_parameter('cmd_timeout_sec', 1.0)
-        self.declare_parameter('send_period_sec', 5.0)
-        self.declare_parameter('heartbeat_sec', 0.6)
+        self.declare_parameter('send_period_sec', 0.1)
+        self.declare_parameter('heartbeat_sec', 2.0)
         self.declare_parameter('max_pwm', 80)
         self.declare_parameter('linear_gain', 50.0)
         self.declare_parameter('angular_gain', 35.0)
@@ -41,6 +40,8 @@ class CmdVelSerialBridge(Node):
 
         self.left = 0
         self.right = 0
+        self.last_rx_left = None
+        self.last_rx_right = None
         self.last_cmd_time = self.get_clock().now()
         self.last_sent_left = None
         self.last_sent_right = None
@@ -70,10 +71,18 @@ class CmdVelSerialBridge(Node):
         candidate_right = max(min(right, self.max_pwm), -self.max_pwm)
 
         # Apply minimum PWM to avoid tiny ineffective commands like D -1 1 1
-        self.left = self._apply_deadband(candidate_left)
-        self.right = self._apply_deadband(candidate_right)
+        new_left = self._apply_deadband(candidate_left)
+        new_right = self._apply_deadband(candidate_right)
+
+        self.left = new_left
+        self.right = new_right
         self.last_cmd_time = now
-        print(f"[BRIDGE CMD] L={self.left:3d}, R={self.right:3d}", flush=True)
+
+        # Avoid terminal spam: log only when received command changes.
+        if new_left != self.last_rx_left or new_right != self.last_rx_right:
+            print(f"[BRIDGE RX] L={new_left:3d}, R={new_right:3d}", flush=True)
+            self.last_rx_left = new_left
+            self.last_rx_right = new_right
 
     def send_command(self):
         now = self.get_clock().now()
@@ -91,6 +100,7 @@ class CmdVelSerialBridge(Node):
             desired_right != self.last_sent_right
         )
         send_due_to_heartbeat = (
+            (desired_left != 0 or desired_right != 0) and
             (now - self.last_send_time).nanoseconds / 1e9 >= self.heartbeat_sec
         )
 

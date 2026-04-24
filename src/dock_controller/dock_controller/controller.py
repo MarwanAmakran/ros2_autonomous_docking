@@ -48,6 +48,8 @@ class DockController(Node):
         self.phase = 'REST'
         self.phase_until = self.get_clock().now()
         self.phase_twist = Twist()
+        self.last_cmd_linear = None
+        self.last_cmd_angular = None
 
         # Parameters
         self.declare_parameter('target_marker_id', -1)
@@ -97,7 +99,6 @@ class DockController(Node):
         self.marker_area = float(msg.y)
         self.marker_id = marker_id
         self.last_marker_time = self.get_clock().now()
-        print(f"[DOCK MARKER] ID={marker_id}, x={self.marker_x:.1f}, area={self.marker_area:.1f}, recent={self.marker_recent()}", flush=True)
 
     def battery_callback(self, msg):
         now = self.get_clock().now()
@@ -130,12 +131,9 @@ class DockController(Node):
         self.last_battery_time = now
 
     def dock_trigger_callback(self, msg):
-        self.get_logger().info(f"RECEIVED /dock_robot trigger: x={msg.x}")
         if msg.x > 0.5:
             self.dock_requested = True
-            self.get_logger().info(f"dock_requested=True, state={self.state}")
             if self.state == 'IDLE' and not self.emergency_stop:
-                self.get_logger().info("Setting state to SEARCH")
                 self.set_state('SEARCH')
 
     def undock_callback(self, msg):
@@ -168,8 +166,22 @@ class DockController(Node):
 
     def set_state(self, new_state):
         if self.state != new_state:
+            old_state = self.state
             self.state = new_state
             self.state_enter_time = self.get_clock().now()
+            self.get_logger().info(f"state transition: {old_state} -> {new_state}")
+
+    def publish_cmd(self, twist):
+        lin = float(twist.linear.x)
+        ang = float(twist.angular.z)
+
+        if self.last_cmd_linear is not None and self.last_cmd_angular is not None:
+            if abs(lin - self.last_cmd_linear) < 1e-6 and abs(ang - self.last_cmd_angular) < 1e-6:
+                return
+
+        self.cmd_pub.publish(twist)
+        self.last_cmd_linear = lin
+        self.last_cmd_angular = ang
 
     def state_age(self):
         return (self.get_clock().now() - self.state_enter_time).nanoseconds / 1e9
@@ -204,12 +216,12 @@ class DockController(Node):
     def apply_phase_command(self):
         now = self.get_clock().now()
         if now < self.phase_until:
-            self.cmd_pub.publish(self.phase_twist)
+            self.publish_cmd(self.phase_twist)
             return True
 
         if self.phase == 'MOVE':
             self.start_rest_phase()
-            self.cmd_pub.publish(Twist())
+            self.publish_cmd(Twist())
             return True
 
         return False
@@ -249,7 +261,7 @@ class DockController(Node):
 
     def control_loop(self):
         if self.emergency_stop:
-            self.cmd_pub.publish(Twist())
+            self.publish_cmd(Twist())
             return
 
         if self.apply_phase_command():
@@ -258,7 +270,7 @@ class DockController(Node):
         cmd = Twist()
 
         if self.state == 'IDLE':
-            self.cmd_pub.publish(Twist())
+            self.publish_cmd(Twist())
             if self.dock_requested:
                 self.set_state('SEARCH')
             return
@@ -266,18 +278,16 @@ class DockController(Node):
         if self.state == 'SEARCH':
             if self.state_age() > self.search_timeout_sec:
                 self.set_state('IDLE')
-                self.cmd_pub.publish(Twist())
+                self.publish_cmd(Twist())
                 return
             recent = self.marker_recent()
             has_width = self.image_width is not None
-            print(f"[DOCK SEARCH] marker_recent={recent}, image_width={has_width}", flush=True)
             if recent and has_width:
-                print(f"[DOCK SEARCH] -> Going to ALIGN!", flush=True)
                 self.set_state('ALIGN')
                 return
             cmd.angular.z = self.search_angular_speed
             self.start_move_phase(cmd)
-            self.cmd_pub.publish(cmd)
+            self.publish_cmd(cmd)
             return
 
         if self.state == 'ALIGN':
@@ -290,13 +300,13 @@ class DockController(Node):
                 return
             cmd.angular.z = max(min(-0.45 * err, 0.25), -0.25)
             self.start_move_phase(cmd)
-            self.cmd_pub.publish(cmd)
+            self.publish_cmd(cmd)
             return
 
         if self.state == 'APPROACH':
             if self.state_age() > self.approach_timeout_sec:
                 self.set_state('IDLE')
-                self.cmd_pub.publish(Twist())
+                self.publish_cmd(Twist())
                 return
             if not self.marker_recent() or self.image_width is None or self.marker_x is None:
                 self.set_state('SEARCH')
@@ -304,30 +314,30 @@ class DockController(Node):
             err = self.heading_error()
             if abs(err) < 0.05 and self.marker_area >= self.dock_area_threshold:
                 self.set_state('DOCKED')
-                self.cmd_pub.publish(Twist())
+                self.publish_cmd(Twist())
                 return
             cmd.linear.x = self.approach_linear_speed
             cmd.angular.z = max(min(-0.35 * err, 0.2), -0.2)
             self.start_move_phase(cmd)
-            self.cmd_pub.publish(cmd)
+            self.publish_cmd(cmd)
             return
 
         if self.state == 'DOCKED':
-            self.cmd_pub.publish(Twist())
+            self.publish_cmd(Twist())
             return
 
         if self.state == 'UNDOCK':
             if self.state_age() <= self.undock_duration_sec:
                 cmd.linear.x = self.undock_linear_speed
                 self.start_move_phase(cmd)
-                self.cmd_pub.publish(cmd)
+                self.publish_cmd(cmd)
                 return
             self.set_state('IDLE')
             self.dock_requested = False
-            self.cmd_pub.publish(Twist())
+            self.publish_cmd(Twist())
             return
 
-        self.cmd_pub.publish(Twist())
+        self.publish_cmd(Twist())
 
 
 def main(args=None):
