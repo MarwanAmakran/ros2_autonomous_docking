@@ -83,7 +83,7 @@ class CmdVelSerialBridge(Node):
             desired_left = self.left
             desired_right = self.right
 
-        # Only send if command changed OR heartbeat due
+        # Only send if command changed OR heartbeat due (but heartbeat sends ZERO if timeout)
         send_due_to_change = (
             desired_left != self.last_sent_left or
             desired_right != self.last_sent_right
@@ -96,6 +96,7 @@ class CmdVelSerialBridge(Node):
             return
 
         command = f"D {desired_left} {desired_right} 1\n"
+        self.get_logger().info(f"Sent: {command.strip()}")
         try:
             self.ser.write(command.encode())
         except Exception as e:
