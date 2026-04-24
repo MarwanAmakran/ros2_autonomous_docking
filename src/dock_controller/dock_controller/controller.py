@@ -68,6 +68,7 @@ class DockController(Node):
         self.declare_parameter('distance_scale_cm_px', 2400.0)
         self.declare_parameter('charging_voltage_rise_per_sec', 0.01)
         self.declare_parameter('low_battery_alarm_v', 6.0)
+        self.declare_parameter('fallback_image_width', 640.0)
 
         self.target_marker_id = int(self.get_parameter('target_marker_id').value)
         self.search_angular_speed = float(self.get_parameter('search_angular_speed').value)
@@ -84,6 +85,7 @@ class DockController(Node):
         self.distance_scale_cm_px = float(self.get_parameter('distance_scale_cm_px').value)
         self.charging_voltage_rise_per_sec = float(self.get_parameter('charging_voltage_rise_per_sec').value)
         self.low_battery_alarm_v = float(self.get_parameter('low_battery_alarm_v').value)
+        self.fallback_image_width = float(self.get_parameter('fallback_image_width').value)
 
         # Timers
         self.control_timer = self.create_timer(0.1, self.control_loop)
@@ -199,9 +201,10 @@ class DockController(Node):
         return self.distance_scale_cm_px / math.sqrt(self.marker_area)
 
     def heading_error(self):
-        if self.image_width is None or self.marker_x is None:
+        if self.marker_x is None:
             return 0.0
-        center_x = 0.5 * float(self.image_width)
+        width = float(self.image_width) if self.image_width is not None else self.fallback_image_width
+        center_x = 0.5 * width
         return (self.marker_x - center_x) / max(center_x, 1.0)
 
     def start_move_phase(self, twist):
@@ -281,9 +284,7 @@ class DockController(Node):
                 self.set_state('IDLE')
                 self.publish_cmd(Twist())
                 return
-            recent = self.marker_recent()
-            has_width = self.image_width is not None
-            if recent and has_width:
+            if self.marker_recent():
                 self.set_state('ALIGN')
                 return
             cmd.angular.z = self.search_angular_speed
@@ -292,7 +293,7 @@ class DockController(Node):
             return
 
         if self.state == 'ALIGN':
-            if not self.marker_recent() or self.image_width is None or self.marker_x is None:
+            if not self.marker_recent() or self.marker_x is None:
                 self.set_state('SEARCH')
                 return
             err = self.heading_error()
@@ -309,7 +310,7 @@ class DockController(Node):
                 self.set_state('IDLE')
                 self.publish_cmd(Twist())
                 return
-            if not self.marker_recent() or self.image_width is None or self.marker_x is None:
+            if not self.marker_recent() or self.marker_x is None:
                 self.set_state('SEARCH')
                 return
             err = self.heading_error()
